@@ -1,10 +1,11 @@
 import json
 import random
 import re
-import sqlite3
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
 
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_from_directory, session, url_for
 
@@ -15,65 +16,155 @@ app.secret_key = os.getenv("SECRET_KEY", "lillys-letter-lounge-dev-secret")
 
 
 BASE_DIR = Path(__file__).resolve().parent
-# Default SQLite DB location; override via env if you mount a persistent disk on Render.
-# Example Render env var: DB_PATH=/var/data/wordsearch.db
-DB_PATH = Path(os.getenv("DB_PATH", str(BASE_DIR / "wordsearch.db")))
+
+# Database configuration: use PostgreSQL if DATABASE_URL is set (Render provides this),
+# otherwise fall back to SQLite for local development.
+DATABASE_URL = os.getenv("DATABASE_URL")
+USE_POSTGRES = bool(DATABASE_URL)
+
+if USE_POSTGRES:
+    # Parse PostgreSQL connection string
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    DB_PARAMS = urlparse(DATABASE_URL)
+else:
+    # SQLite for local development
+    import sqlite3
+    DB_PATH = Path(os.getenv("DB_PATH", str(BASE_DIR / "wordsearch.db")))
 
 # Optional: allow configuring Lilly's password without editing code.
 LILLY_PASSWORD = os.getenv("LILLY_PASSWORD", "07072009")
 
 
-def get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    # Ensure ON DELETE CASCADE works for lilly_progress, etc.
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+def get_db():
+    """Get a database connection. Returns SQLite connection or PostgreSQL connection.
+    Note: PostgreSQL connections should be closed explicitly, SQLite supports context manager."""
+    if USE_POSTGRES:
+        import psycopg2
+        conn = psycopg2.connect(DATABASE_URL)
+        return conn
+    else:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        # Ensure ON DELETE CASCADE works for lilly_progress, etc.
+        conn.execute("PRAGMA foreign_keys = ON")
+        return conn
+
+
+def execute_query(conn, sql: str, params: tuple = ()) -> Any:
+    """Execute a query and return cursor. Handles SQL syntax differences between SQLite and PostgreSQL."""
+    if USE_POSTGRES:
+        # PostgreSQL uses %s for placeholders
+        sql = sql.replace("?", "%s")
+        cur = conn.cursor()
+        cur.execute(sql, params)
+        return cur
+    else:
+        # SQLite uses ? for placeholders
+        cur = conn.cursor()
+        cur.execute(sql, params)
+        return cur
+
+
+def fetchone_dict(conn, sql: str, params: tuple = ()):
+    """Execute query and return one row as a dict-like object."""
+    if USE_POSTGRES:
+        from psycopg2.extras import RealDictCursor
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        sql = sql.replace("?", "%s")
+        cur.execute(sql, params)
+        return cur.fetchone()
+    else:
+        cur = conn.cursor()
+        cur.row_factory = sqlite3.Row
+        cur.execute(sql, params)
+        row = cur.fetchone()
+        return row
+
+
+def fetchall_dict(conn, sql: str, params: tuple = ()):
+    """Execute query and return all rows as dict-like objects."""
+    if USE_POSTGRES:
+        from psycopg2.extras import RealDictCursor
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        sql = sql.replace("?", "%s")
+        cur.execute(sql, params)
+        return cur.fetchall()
+    else:
+        cur = conn.cursor()
+        cur.row_factory = sqlite3.Row
+        cur.execute(sql, params)
+        return cur.fetchall()
 
 
 def init_db() -> None:
-    with get_db() as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS puzzles (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              created_at TEXT NOT NULL,
-              creator_name TEXT NOT NULL,
-              theme TEXT NOT NULL,
-              grid_size INTEGER NOT NULL,
-              words_json TEXT NOT NULL,
-              grid_json TEXT NOT NULL,
-              placements_json TEXT NOT NULL
-            )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS lilly_progress (
-              puzzle_id INTEGER PRIMARY KEY,
-              found_words_json TEXT NOT NULL DEFAULT '[]',
-              updated_at TEXT NOT NULL,
-              FOREIGN KEY(puzzle_id) REFERENCES puzzles(id) ON DELETE CASCADE
-            )
-            """
-        )
+    """Initialize database tables. Works for both SQLite and PostgreSQL."""
+    conn = get_db()
+    try:
+        if USE_POSTGRES:
+            # PostgreSQL schema
+            execute_query(conn, """
+                CREATE TABLE IF NOT EXISTS puzzles (
+                  id SERIAL PRIMARY KEY,
+                  created_at TEXT NOT NULL,
+                  creator_name TEXT NOT NULL,
+                  theme TEXT NOT NULL,
+                  grid_size INTEGER NOT NULL,
+                  words_json TEXT NOT NULL,
+                  grid_json TEXT NOT NULL,
+                  placements_json TEXT NOT NULL
+                )
+            """)
+            execute_query(conn, """
+                CREATE TABLE IF NOT EXISTS lilly_progress (
+                  puzzle_id INTEGER PRIMARY KEY,
+                  found_words_json TEXT NOT NULL DEFAULT '[]',
+                  updated_at TEXT NOT NULL,
+                  FOREIGN KEY(puzzle_id) REFERENCES puzzles(id) ON DELETE CASCADE
+                )
+            """)
+        else:
+            # SQLite schema
+            execute_query(conn, """
+                CREATE TABLE IF NOT EXISTS puzzles (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  created_at TEXT NOT NULL,
+                  creator_name TEXT NOT NULL,
+                  theme TEXT NOT NULL,
+                  grid_size INTEGER NOT NULL,
+                  words_json TEXT NOT NULL,
+                  grid_json TEXT NOT NULL,
+                  placements_json TEXT NOT NULL
+                )
+            """)
+            execute_query(conn, """
+                CREATE TABLE IF NOT EXISTS lilly_progress (
+                  puzzle_id INTEGER PRIMARY KEY,
+                  found_words_json TEXT NOT NULL DEFAULT '[]',
+                  updated_at TEXT NOT NULL,
+                  FOREIGN KEY(puzzle_id) REFERENCES puzzles(id) ON DELETE CASCADE
+                )
+            """)
         conn.commit()
+    finally:
+        conn.close()
 
 
-# Ensure tables exist when running under Gunicorn (import-time init is safe for SQLite).
+# Ensure tables exist when running under Gunicorn (import-time init is safe for both SQLite and PostgreSQL).
 init_db()
 
 
 def build_puzzle_list() -> list[dict]:
     """Build the puzzle list with status + metadata (used by Lilly + Admin dashboards)."""
-    with get_db() as conn:
-        puzzles = conn.execute(
-            """
+    conn = get_db()
+    try:
+        puzzles = fetchall_dict(conn, """
             SELECT id, created_at, creator_name, theme, grid_size, words_json
             FROM puzzles
             ORDER BY id DESC
-            """
-        ).fetchall()
+        """)
+    finally:
+        conn.close()
 
     items: list[dict] = []
     for p in puzzles:
@@ -228,11 +319,11 @@ def require_lilly() -> None:
 
 
 def get_progress(puzzle_id: int) -> list[str]:
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT found_words_json FROM lilly_progress WHERE puzzle_id = ?",
-            (puzzle_id,),
-        ).fetchone()
+    conn = get_db()
+    try:
+        row = fetchone_dict(conn, "SELECT found_words_json FROM lilly_progress WHERE puzzle_id = ?", (puzzle_id,))
+    finally:
+        conn.close()
 
     if row is None:
         return []
@@ -246,18 +337,18 @@ def get_progress(puzzle_id: int) -> list[str]:
 def set_progress(puzzle_id: int, found_words: list[str]) -> None:
     now = datetime.now(timezone.utc).isoformat()
     found_words = [w.upper() for w in found_words]
-    with get_db() as conn:
-        conn.execute(
-            """
+    conn = get_db()
+    try:
+        execute_query(conn, """
             INSERT INTO lilly_progress (puzzle_id, found_words_json, updated_at)
             VALUES (?, ?, ?)
             ON CONFLICT(puzzle_id) DO UPDATE SET
               found_words_json = excluded.found_words_json,
               updated_at = excluded.updated_at
-            """,
-            (puzzle_id, json.dumps(found_words), now),
-        )
+        """, (puzzle_id, json.dumps(found_words), now))
         conn.commit()
+    finally:
+        conn.close()
 
 
 @app.route("/")
@@ -307,11 +398,14 @@ def admin_dashboard():
 
 @app.route("/admin/puzzles/<int:puzzle_id>/delete", methods=["POST"])
 def admin_delete_puzzle(puzzle_id: int):
-    with get_db() as conn:
+    conn = get_db()
+    try:
         # Extra safety: delete progress explicitly (even though FK cascade is enabled)
-        conn.execute("DELETE FROM lilly_progress WHERE puzzle_id = ?", (puzzle_id,))
-        conn.execute("DELETE FROM puzzles WHERE id = ?", (puzzle_id,))
+        execute_query(conn, "DELETE FROM lilly_progress WHERE puzzle_id = ?", (puzzle_id,))
+        execute_query(conn, "DELETE FROM puzzles WHERE id = ?", (puzzle_id,))
         conn.commit()
+    finally:
+        conn.close()
 
     return redirect(url_for("admin_dashboard"))
 
@@ -321,8 +415,11 @@ def lilly_solve(puzzle_id: int):
     if not lilly_is_authed():
         return redirect(url_for("lilly_login"))
 
-    with get_db() as conn:
-        row = conn.execute("SELECT * FROM puzzles WHERE id = ?", (puzzle_id,)).fetchone()
+    conn = get_db()
+    try:
+        row = fetchone_dict(conn, "SELECT * FROM puzzles WHERE id = ?", (puzzle_id,))
+    finally:
+        conn.close()
 
     if row is None:
         return "Puzzle not found", 404
@@ -377,8 +474,11 @@ def lilly_check_selection(puzzle_id: int):
     sr, sc = int(start[0]), int(start[1])
     er, ec = int(end[0]), int(end[1])
 
-    with get_db() as conn:
-        row = conn.execute("SELECT grid_size, placements_json FROM puzzles WHERE id = ?", (puzzle_id,)).fetchone()
+    conn = get_db()
+    try:
+        row = fetchone_dict(conn, "SELECT grid_size, placements_json FROM puzzles WHERE id = ?", (puzzle_id,))
+    finally:
+        conn.close()
 
     if row is None:
         return jsonify({"ok": False, "reason": "not_found"}), 404
@@ -519,13 +619,14 @@ def save_word_search():
         return "Invalid puzzle payload.", 400
 
     created_at = datetime.now(timezone.utc).isoformat()
-    with get_db() as conn:
-        cur = conn.execute(
-            """
-            INSERT INTO puzzles (created_at, creator_name, theme, grid_size, words_json, grid_json, placements_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
+    conn = get_db()
+    try:
+        if USE_POSTGRES:
+            cur = execute_query(conn, """
+                INSERT INTO puzzles (created_at, creator_name, theme, grid_size, words_json, grid_json, placements_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                RETURNING id
+            """, (
                 created_at,
                 creator_name,
                 theme,
@@ -533,18 +634,36 @@ def save_word_search():
                 json.dumps(words),
                 json.dumps(grid),
                 json.dumps(placements),
-            ),
-        )
-        puzzle_id = cur.lastrowid
+            ))
+            puzzle_id = cur.fetchone()[0]
+        else:
+            cur = execute_query(conn, """
+                INSERT INTO puzzles (created_at, creator_name, theme, grid_size, words_json, grid_json, placements_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                created_at,
+                creator_name,
+                theme,
+                grid_size,
+                json.dumps(words),
+                json.dumps(grid),
+                json.dumps(placements),
+            ))
+            puzzle_id = cur.lastrowid
         conn.commit()
+    finally:
+        conn.close()
 
     return redirect(url_for("view_puzzle", puzzle_id=puzzle_id))
 
 
 @app.route("/puzzles/<int:puzzle_id>")
 def view_puzzle(puzzle_id: int):
-    with get_db() as conn:
-        row = conn.execute("SELECT * FROM puzzles WHERE id = ?", (puzzle_id,)).fetchone()
+    conn = get_db()
+    try:
+        row = fetchone_dict(conn, "SELECT * FROM puzzles WHERE id = ?", (puzzle_id,))
+    finally:
+        conn.close()
 
     if row is None:
         return "Puzzle not found", 404
