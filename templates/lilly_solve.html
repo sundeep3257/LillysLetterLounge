@@ -1,0 +1,276 @@
+{% extends "base.html" %}
+
+{% block title %}Solve: {{ puzzle.theme }} - Lilly's Letter Lounge{% endblock %}
+
+{% block extra_head %}
+<style>
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 16px;
+    align-items: start;
+    text-align: left;
+  }
+  @media (max-width: 980px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+
+  .grid-wrap { overflow-x: auto; }
+  table.grid {
+    border-collapse: separate;
+    border-spacing: 6px;
+    margin: 8px auto 0;
+  }
+  table.grid td {
+    width: 34px;
+    height: 34px;
+    text-align: center;
+    vertical-align: middle;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.14);
+    font-weight: 900;
+    letter-spacing: 0.5px;
+    user-select: none;
+    cursor: pointer;
+    transition: transform 120ms ease, filter 120ms ease, background 120ms ease;
+  }
+  table.grid td.sel {
+    background: rgba(0,255,255,0.22);
+    border-color: rgba(0,255,255,0.35);
+    box-shadow: 0 0 16px rgba(0,255,255,0.18);
+    transform: scale(1.03);
+  }
+  table.grid td.found {
+    /* Colors are applied dynamically per-word (purple/blue/green/pink). */
+  }
+
+  .wordlist {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .word {
+    padding: 10px 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(255,255,255,0.06);
+    font-weight: 900;
+    letter-spacing: 0.3px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+  }
+  .word.done {
+    opacity: 0.75;
+    text-decoration: line-through;
+  }
+  .hint {
+    color: rgba(224,224,255,0.85);
+    font-size: 0.95rem;
+    line-height: 1.6;
+    margin-top: 10px;
+  }
+  .toast {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(255,255,255,0.06);
+    color: rgba(224,224,255,0.95);
+    display:none;
+  }
+  .toast.ok { display:block; border-color: rgba(6,255,165,0.25); background: rgba(6,255,165,0.10); }
+  .toast.bad { display:block; border-color: rgba(255,0,120,0.35); background: rgba(255,0,120,0.10); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+    <div style="text-align:left;">
+      <h1 style="margin-bottom:6px;">{{ puzzle.theme }}</h1>
+      <div class="subtitle" style="margin-bottom:0;">
+        Puzzle #{{ puzzle.id }} · Made by {{ puzzle.creator_name }} · Grid {{ puzzle.grid_size }}×{{ puzzle.grid_size }}
+      </div>
+    </div>
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+      <a class="btn btn-ghost" href="{{ url_for('lilly_dashboard') }}">Back to List</a>
+      <a class="btn btn-secondary" href="{{ url_for('lilly_logout') }}">Logout</a>
+    </div>
+  </div>
+
+  <div class="layout" style="margin-top: 14px;">
+    <div class="grid-wrap">
+      <table class="grid" aria-label="Word search puzzle grid">
+        <tbody>
+          {% for row in puzzle.grid %}
+          {% set r = loop.index0 %}
+          <tr>
+            {% for ch in row %}
+            <td class="cell" data-r="{{ r }}" data-c="{{ loop.index0 }}">{{ ch }}</td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="hint">
+        <strong>How to play:</strong> click and drag across letters in a straight line (horizontal, vertical, or diagonal).
+        If you find a word, it will stay highlighted and get crossed off.
+      </div>
+    </div>
+
+    <div>
+      <div class="subtitle" style="margin-bottom: 0; text-align:left;"><strong>Words to find</strong></div>
+      <div class="wordlist" id="wordlist">
+        {% for w in puzzle.words %}
+        <div class="word {% if w in puzzle.found_words %}done{% endif %}" data-word="{{ w }}">{{ w }}</div>
+        {% endfor %}
+      </div>
+      <div class="toast" id="toast"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const PUZZLE_ID = {{ puzzle.id }};
+  const WORDS = {{ puzzle.words | tojson }};
+  const FOUND_CELLS = {{ puzzle.found_cells | tojson }};
+
+  const palette = [
+    {bg: 'rgba(199,125,255,0.22)', glow: 'rgba(199,125,255,0.25)'}, // purple
+    {bg: 'rgba(0,255,255,0.18)',   glow: 'rgba(0,255,255,0.22)'},   // blue/cyan
+    {bg: 'rgba(6,255,165,0.18)',   glow: 'rgba(6,255,165,0.22)'},   // green
+    {bg: 'rgba(255,0,255,0.16)',   glow: 'rgba(255,0,255,0.20)'},   // pink
+  ];
+
+  const toast = document.getElementById('toast');
+  const cells = Array.from(document.querySelectorAll('td.cell'));
+  const cellMap = new Map(cells.map(td => [`${td.dataset.r},${td.dataset.c}`, td]));
+
+  let dragging = false;
+  let start = null;
+  let current = null;
+
+  function showToast(kind, msg) {
+    toast.className = 'toast ' + kind;
+    toast.textContent = msg;
+    setTimeout(() => { toast.className = 'toast'; toast.textContent=''; }, 1400);
+  }
+
+  function clearSelection() {
+    cells.forEach(td => td.classList.remove('sel'));
+  }
+
+  function computeLineCells(a, b) {
+    const sr = a.r, sc = a.c, er = b.r, ec = b.c;
+    const dr = er - sr, dc = ec - sc;
+    const stepR = dr === 0 ? 0 : (dr > 0 ? 1 : -1);
+    const stepC = dc === 0 ? 0 : (dc > 0 ? 1 : -1);
+    if (!(dr === 0 || dc === 0 || Math.abs(dr) === Math.abs(dc))) return [];
+    const length = Math.max(Math.abs(dr), Math.abs(dc)) + 1;
+    const out = [];
+    for (let i = 0; i < length; i++) out.push({r: sr + i*stepR, c: sc + i*stepC});
+    return out;
+  }
+
+  function paintSelection(a, b) {
+    clearSelection();
+    const line = computeLineCells(a, b);
+    line.forEach(({r,c}) => {
+      const td = cellMap.get(`${r},${c}`);
+      if (td && !td.classList.contains('found')) td.classList.add('sel');
+    });
+  }
+
+  async function checkSelection(a, b) {
+    const res = await fetch(`/lilly/puzzles/${PUZZLE_ID}/check`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({start:[a.r,a.c], end:[b.r,b.c]})
+    });
+    const data = await res.json().catch(() => null);
+    return data;
+  }
+
+  function markFound(word, cellsList) {
+    const idx = WORDS.indexOf(word);
+    const color = palette[(idx >= 0 ? idx : 0) % palette.length];
+
+    // Cross off word
+    const el = document.querySelector(`.word[data-word="${word}"]`);
+    if (el) {
+      el.classList.add('done');
+      el.style.background = color.bg;
+      el.style.borderColor = color.glow;
+      el.style.boxShadow = `0 0 14px ${color.glow}`;
+    }
+
+    // Permanently highlight cells
+    (cellsList || []).forEach(([r,c]) => {
+      const td = cellMap.get(`${r},${c}`);
+      if (td) {
+        td.classList.remove('sel');
+        td.classList.add('found');
+        td.style.background = color.bg;
+        td.style.borderColor = color.glow;
+        td.style.boxShadow = `0 0 16px ${color.glow}`;
+      }
+    });
+  }
+
+  // Apply existing found words (only locations for already-found words are sent down)
+  Object.entries(FOUND_CELLS || {}).forEach(([word, cellsList]) => {
+    markFound(word, cellsList);
+  });
+
+  function tdToCoord(td) {
+    return {r: Number(td.dataset.r), c: Number(td.dataset.c)};
+  }
+
+  cells.forEach(td => {
+    td.addEventListener('mousedown', (e) => {
+      dragging = true;
+      start = tdToCoord(td);
+      current = start;
+      paintSelection(start, current);
+      e.preventDefault();
+    });
+
+    td.addEventListener('mouseenter', () => {
+      if (!dragging || !start) return;
+      current = tdToCoord(td);
+      paintSelection(start, current);
+    });
+  });
+
+  window.addEventListener('mouseup', async () => {
+    if (!dragging || !start || !current) return;
+    dragging = false;
+
+    const a = start, b = current;
+    start = null; current = null;
+
+    const data = await checkSelection(a, b);
+    clearSelection();
+
+    if (!data || !data.ok) {
+      showToast('bad', 'Nope — try again!');
+      return;
+    }
+
+    const word = data.word;
+    if (!word) return;
+
+    if (!data.already_found) {
+      markFound(word, data.cells);
+      showToast('ok', `Great job! Found ${word}.`);
+    } else {
+      showToast('ok', `${word} was already found.`);
+    }
+  });
+</script>
+{% endblock %}
+

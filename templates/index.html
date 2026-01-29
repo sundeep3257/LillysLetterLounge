@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Lilly's Letter Lounge{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* Homepage-only: center the hero card vertically */
+    .container {
+        min-height: calc(100vh - 140px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding-top: 0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1>Lilly's Letter Loun<span id="admin-g" title="(secret)">g</span>e</h1>
+    <div class="subtitle">
+        Welcome to Lilly's Letter Lounge! This is a special place Lilly’s friends and family can make custom word searches for her to solve.
+        Explore the galaxy of letters and find hidden words among the stars!
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:14px; align-items:center; margin-top: 18px;">
+        <a href="{{ url_for('make_word_search') }}" class="btn btn-primary" style="min-width: 260px;">Make a Word Search for Lilly</a>
+        <a href="{{ url_for('lilly_login') }}" class="btn btn-secondary" style="min-width: 260px;">Lilly Login</a>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Dashboard - Lilly's Letter Lounge{% endblock %}
+
+{% block extra_head %}
+<style>
+  .topbar {
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    flex-wrap:wrap;
+    margin-bottom: 14px;
+    text-align: left;
+  }
+  .table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0 10px;
+  }
+  .row {
+    background: rgba(10, 10, 26, 0.55);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+  .row td {
+    padding: 14px 12px;
+    vertical-align: middle;
+    border-top: 1px solid rgba(255,255,255,0.10);
+    border-bottom: 1px solid rgba(255,255,255,0.10);
+  }
+  .row td:first-child {
+    border-left: 1px solid rgba(255,255,255,0.10);
+    border-top-left-radius: 16px;
+    border-bottom-left-radius: 16px;
+  }
+  .row td:last-child {
+    border-right: 1px solid rgba(255,255,255,0.10);
+    border-top-right-radius: 16px;
+    border-bottom-right-radius: 16px;
+  }
+  .badge {
+    display:inline-block;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-weight: 900;
+    letter-spacing: 0.2px;
+    font-size: 0.9rem;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(255,255,255,0.08);
+  }
+  .b-not { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.9); }
+  .b-part { background: rgba(255,215,0,0.12); border-color: rgba(255,215,0,0.22); color: #fff2b3; }
+  .b-done { background: rgba(6,255,165,0.14); border-color: rgba(6,255,165,0.25); color: #d5ffef; }
+  .muted { color: rgba(224,224,255,0.85); }
+
+  .puzzle-link {
+    color: #ffffff;
+    text-decoration: none;
+    font-weight: 900;
+  }
+  .puzzle-link:hover { text-decoration: underline; }
+
+  .btn-danger {
+    background: linear-gradient(135deg, #ff2d7a, #ff5fd1);
+    color: #120014;
+  }
+
+  @media (max-width: 900px) {
+    .hide-sm { display:none; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="topbar">
+    <div>
+      <h1 style="margin-bottom:6px;">Admin Dashboard</h1>
+      <div class="subtitle" style="margin-bottom:0;">
+        Manage puzzles (delete word searches from the database).
+      </div>
+    </div>
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+      <a class="btn btn-ghost" href="{{ url_for('home') }}">Home</a>
+      <a class="btn btn-secondary" href="{{ url_for('lilly_login') }}">Lilly Login</a>
+    </div>
+  </div>
+
+  {% if puzzles|length == 0 %}
+    <div class="subtitle" style="text-align:left;">No puzzles exist yet.</div>
+  {% else %}
+    <div class="grid-wrap">
+      <table class="table" aria-label="Admin puzzle list">
+        <thead>
+          <tr style="text-align:left; color: rgba(224,224,255,0.85);">
+            <th style="padding: 6px 12px;">Theme</th>
+            <th class="hide-sm" style="padding: 6px 12px;">Made By</th>
+            <th style="padding: 6px 12px;">Status</th>
+            <th class="hide-sm" style="padding: 6px 12px;">Words</th>
+            <th class="hide-sm" style="padding: 6px 12px;">Grid</th>
+            <th style="padding: 6px 12px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in puzzles %}
+          <tr class="row">
+            <td>
+              <a class="puzzle-link" href="{{ url_for('lilly_solve', puzzle_id=p.id) }}">{{ p.theme }}</a>
+              <div class="muted" style="margin-top:4px;">Puzzle #{{ p.id }}</div>
+            </td>
+            <td class="hide-sm"><span class="muted">{{ p.creator_name }}</span></td>
+            <td>
+              {% if p.status == "completed" %}
+                <span class="badge b-done">Completed</span>
+              {% elif p.status == "partially completed" %}
+                <span class="badge b-part">Partial ({{ p.found_count }}/{{ p.word_count }})</span>
+              {% else %}
+                <span class="badge b-not">Not Started</span>
+              {% endif %}
+            </td>
+            <td class="hide-sm"><span class="muted">{{ p.word_count }}</span></td>
+            <td class="hide-sm"><span class="muted">{{ p.grid_size }}×{{ p.grid_size }}</span></td>
+            <td style="text-align:right; white-space:nowrap;">
+              <form method="post" action="{{ url_for('admin_delete_puzzle', puzzle_id=p.id) }}" style="display:inline;">
+                <button class="btn btn-danger" type="submit"
+                        onclick="return confirm('Delete Puzzle #{{ p.id }} ({{ p.theme }})? This cannot be undone.');">
+                  Delete
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+

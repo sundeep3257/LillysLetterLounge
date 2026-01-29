@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}Lilly Login - Lilly's Letter Lounge{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 560px; margin: 0 auto; text-align:left;">
+  <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+    <div>
+      <h1 style="margin-bottom:6px;">Lilly Login</h1>
+      <div class="subtitle" style="margin-bottom:0;">Enter the secret password to see your puzzles.</div>
+    </div>
+    <div>
+      <a class="btn btn-ghost" href="{{ url_for('home') }}">Back Home</a>
+    </div>
+  </div>
+
+  {% if error %}
+  <div class="error">{{ error }}</div>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('lilly_login') }}">
+    <div class="field">
+      <label class="label" for="password">Password</label>
+      <input type="password" id="password" name="password" placeholder="Enter password" required autofocus>
+    </div>
+
+    <div style="display:flex; justify-content:flex-end; margin-top: 18px;">
+      <button class="btn btn-primary" type="submit">Login</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+

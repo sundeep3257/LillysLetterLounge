@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}Puzzle #{{ puzzle.id }} - Lilly's Letter Lounge{% endblock %}
+
+{% block extra_head %}
+<style>
+    .grid-wrap { overflow-x: auto; padding-top: 12px; }
+    table.grid {
+        border-collapse: separate;
+        border-spacing: 6px;
+        margin: 10px auto 0;
+    }
+    table.grid td {
+        width: 34px;
+        height: 34px;
+        text-align: center;
+        vertical-align: middle;
+        border-radius: 10px;
+        background: rgba(255,255,255,0.08);
+        border: 1px solid rgba(255,255,255,0.14);
+        font-weight: 900;
+        letter-spacing: 0.5px;
+        text-shadow: 0 0 10px rgba(0,255,255,0.12);
+        user-select: none;
+    }
+    .meta {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+        margin-top: 12px;
+        color: rgba(224,224,255,0.9);
+    }
+    .words {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+    }
+    .chip {
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(6,255,165,0.12);
+        border: 1px solid rgba(6,255,165,0.25);
+        color: #d5ffef;
+        font-weight: bold;
+        font-size: 0.95rem;
+        letter-spacing: 0.3px;
+    }
+    @media print {
+        .footer, .btn { display: none !important; }
+        body { background: #fff; color: #000; }
+        .card { background: #fff; border: 0; box-shadow: none; }
+        table.grid td { background: #fff; border: 1px solid #bbb; color: #000; text-shadow: none; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; text-align:left;">
+        <div>
+            <h1 style="margin-bottom:6px;">{{ puzzle.theme }}</h1>
+            <div class="subtitle" style="margin-bottom:0;">
+                Puzzle #{{ puzzle.id }} · Made by {{ puzzle.creator_name }}
+            </div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <a class="btn btn-ghost" href="{{ url_for('make_word_search') }}">Make Another</a>
+            <a class="btn btn-secondary" href="{{ url_for('home') }}">Home</a>
+            <button class="btn btn-primary" onclick="window.print()">Print</button>
+        </div>
+    </div>
+
+    <div class="meta" style="text-align:left;">
+        <div><strong>Grid:</strong> {{ puzzle.grid_size }} × {{ puzzle.grid_size }}</div>
+        <div><strong>Words to find:</strong></div>
+        <div class="words">
+            {% for w in puzzle.words %}
+            <span class="chip">{{ w }}</span>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="grid-wrap">
+        <table class="grid" aria-label="Word search grid">
+            <tbody>
+                {% for row in puzzle.grid %}
+                <tr>
+                    {% for ch in row %}
+                    <td>{{ ch }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+

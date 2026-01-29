@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Lilly's Letter Lounge{% endblock %}</title>
+    <link rel="icon" type="image/png" href="{{ url_for('favicon') }}">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Comic Sans MS', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0a0a1a 0%, #1a0a2e 50%, #16213e 100%);
+            min-height: 100vh;
+            color: #ffffff;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        .starfield {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }
+
+        .star { position: absolute; border-radius: 50%; pointer-events: none; }
+        .star-small { width: 2px; height: 2px; background: #fff; box-shadow: 0 0 4px #fff, 0 0 8px rgba(255,255,255,.5); animation: twinkle 3s ease-in-out infinite; }
+        .star-medium { width: 3px; height: 3px; background: #fff; box-shadow: 0 0 6px #fff, 0 0 12px rgba(255,255,255,.6); animation: twinkle 2s ease-in-out infinite; }
+        .star-large { width: 4px; height: 4px; background: #fff; box-shadow: 0 0 8px #fff, 0 0 16px rgba(255,255,255,.7); animation: twinkle 2.5s ease-in-out infinite; }
+
+        .star-purple { background: #c77dff; box-shadow: 0 0 6px #c77dff, 0 0 12px rgba(199,125,255,.8), 0 0 20px rgba(199,125,255,.4); }
+        .star-blue   { background: #00ffff; box-shadow: 0 0 6px #00ffff, 0 0 12px rgba(0,255,255,.8), 0 0 20px rgba(0,255,255,.4); }
+        .star-green  { background: #06ffa5; box-shadow: 0 0 6px #06ffa5, 0 0 12px rgba(6,255,165,.8), 0 0 20px rgba(6,255,165,.4); }
+
+        @keyframes twinkle {
+            0%, 100% { opacity: 0.3; transform: scale(1); }
+            50%      { opacity: 1; transform: scale(1.2); }
+        }
+
+        /* Shooting stars removed (keep only twinkling/glowing stars) */
+
+        .container {
+            position: relative;
+            z-index: 1;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 48px 20px 96px;
+            text-align: center;
+        }
+
+        .card {
+            background: rgba(10, 10, 26, 0.55);
+            border: 1px solid rgba(199, 125, 255, 0.25);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+            backdrop-filter: blur(8px);
+            border-radius: 20px;
+            padding: 28px 22px;
+        }
+
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 18px;
+            background: linear-gradient(45deg, #ff00ff, #00ffff, #00ff00);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 0 30px rgba(255, 0, 255, 0.5);
+        }
+
+        /* Admin secret trigger (triple-click the "g") */
+        #admin-g {
+            cursor: default;
+            user-select: none;
+        }
+
+        .subtitle {
+            color: #e0e0ff;
+            text-shadow: 0 0 10px rgba(224, 224, 255, 0.25);
+            font-size: 1.1rem;
+            line-height: 1.7;
+            margin-bottom: 22px;
+        }
+
+        .btn {
+            padding: 14px 26px;
+            font-size: 1.05rem;
+            font-weight: bold;
+            border: none;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+            text-decoration: none;
+            display: inline-block;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            font-family: 'Comic Sans MS', 'Segoe UI', sans-serif;
+        }
+        .btn:focus { outline: 2px solid rgba(0, 255, 255, 0.6); outline-offset: 2px; }
+        .btn:hover { transform: translateY(-2px); filter: brightness(1.05); }
+
+        .btn-primary { background: linear-gradient(135deg, #9d4edd, #c77dff); color: #fff; }
+        .btn-secondary { background: linear-gradient(135deg, #06ffa5, #00d4aa); color: #0a0a1a; }
+        .btn-ghost { background: rgba(255,255,255,0.08); color: #fff; border: 1px solid rgba(255,255,255,0.18); }
+
+        .footer {
+            position: fixed;
+            bottom: 20px;
+            width: 100%;
+            text-align: center;
+            color: #b8b8ff;
+            font-size: 1rem;
+            z-index: 1;
+            text-shadow: 0 0 10px rgba(184, 184, 255, 0.5);
+        }
+
+        .field {
+            text-align: left;
+            margin: 12px 0;
+        }
+
+        .label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 6px;
+            color: #e0e0ff;
+        }
+
+        input[type="text"], input[type="number"], textarea {
+            width: 100%;
+            padding: 12px 12px;
+            border-radius: 14px;
+            border: 1px solid rgba(255,255,255,0.14);
+            background: rgba(0,0,0,0.25);
+            color: #fff;
+            font-size: 1rem;
+            outline: none;
+        }
+
+        textarea { min-height: 140px; resize: vertical; }
+
+        .help {
+            margin-top: 6px;
+            color: rgba(224,224,255,0.8);
+            font-size: 0.95rem;
+        }
+
+        .error {
+            background: rgba(255, 0, 120, 0.12);
+            border: 1px solid rgba(255, 0, 120, 0.35);
+            color: #ffd1ea;
+            padding: 12px 14px;
+            border-radius: 14px;
+            margin: 12px 0 18px;
+            text-align: left;
+        }
+
+        @media (max-width: 768px) {
+            h1 { font-size: 2.3rem; }
+            .container { padding-top: 34px; }
+        }
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <div class="starfield" id="starfield"></div>
+
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+
+    <div class="footer">Made for Lilly</div>
+
+    <script>
+        const starfield = document.getElementById('starfield');
+        const starColors = ['', 'purple', 'blue', 'green'];
+        const starSizes = ['small', 'medium', 'large'];
+
+        function createStars() {
+            const numStars = 150;
+            for (let i = 0; i < numStars; i++) {
+                const star = document.createElement('div');
+                star.className = 'star';
+
+                const size = starSizes[Math.floor(Math.random() * starSizes.length)];
+                star.classList.add(`star-${size}`);
+
+                if (Math.random() > 0.6) {
+                    const color = starColors[Math.floor(Math.random() * starColors.length)];
+                    if (color) star.classList.add(`star-${color}`);
+                }
+
+                star.style.left = Math.random() * 100 + '%';
+                star.style.top = Math.random() * 100 + '%';
+                star.style.animationDelay = Math.random() * 3 + 's';
+
+                starfield.appendChild(star);
+            }
+        }
+
+        createStars();
+        // Shooting stars intentionally disabled.
+
+        // Secret admin access: triple-click the "g" in the homepage title.
+        (function attachAdminTripleClick() {
+            const g = document.getElementById('admin-g');
+            if (!g) return;
+
+            let clicks = 0;
+            let timer = null;
+
+            g.addEventListener('click', (e) => {
+                e.preventDefault();
+                clicks += 1;
+
+                if (timer) clearTimeout(timer);
+                timer = setTimeout(() => { clicks = 0; timer = null; }, 700);
+
+                if (clicks >= 3) {
+                    clicks = 0;
+                    if (timer) { clearTimeout(timer); timer = null; }
+                    window.location.href = "{{ url_for('admin_dashboard') }}";
+                }
+            });
+        })();
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

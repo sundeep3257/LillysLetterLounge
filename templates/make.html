@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Make a Word Search - Lilly's Letter Lounge{% endblock %}
+
+{% block content %}
+<div class="card" style="text-align:left;">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+        <div>
+            <h1 style="margin-bottom:6px;">Make a Word Search</h1>
+            <div class="subtitle" style="margin-bottom:0;">
+                Add a new puzzle for Lilly to solve. Enter your words, choose a grid size, and pick a fun theme.
+            </div>
+        </div>
+        <div>
+            <a class="btn btn-ghost" href="{{ url_for('home') }}">Back Home</a>
+        </div>
+    </div>
+
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('make_word_search') }}">
+        <div class="field">
+            <label class="label" for="creator_name">Your Name</label>
+            <input type="text" id="creator_name" name="creator_name" placeholder="e.g., Aunt Maya" value="{{ form.creator_name }}" required>
+        </div>
+
+        <div class="field">
+            <label class="label" for="theme">Theme</label>
+            <input type="text" id="theme" name="theme" placeholder="e.g., Unicorn Galaxy" value="{{ form.theme }}" required>
+            <div class="help">This will show up on the puzzle page for Lilly.</div>
+        </div>
+
+        <div class="field">
+            <label class="label" for="grid_size">Grid Size</label>
+            <input type="number" id="grid_size" name="grid_size" min="5" max="40" value="{{ form.grid_size }}" required>
+            <div class="help">Recommended grid size: 10–15. (Bigger grid = easier to fit lots of words.)</div>
+        </div>
+
+        <div class="field">
+            <label class="label" for="words">Words (one per line or separated by commas)</label>
+            <textarea id="words" name="words" placeholder="STAR
+GALAXY
+LILLY
+PUZZLE" required>{{ form.words }}</textarea>
+            <div class="help">Letters only are used. Spaces and punctuation will be ignored. Suggested number of words: 5–12.</div>
+        </div>
+
+        <div style="display:flex; gap:12px; align-items:center; justify-content:flex-end; margin-top: 18px; flex-wrap:wrap;">
+            <button type="submit" class="btn btn-primary">Create Puzzle</button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+

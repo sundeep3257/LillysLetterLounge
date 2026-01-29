@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+
+{% block title %}Preview Puzzle - Lilly's Letter Lounge{% endblock %}
+
+{% block extra_head %}
+<style>
+  .grid-wrap { overflow-x: auto; padding-top: 10px; }
+  table.grid {
+    border-collapse: separate;
+    border-spacing: 6px;
+    margin: 10px auto 0;
+  }
+  table.grid td {
+    width: 34px;
+    height: 34px;
+    text-align: center;
+    vertical-align: middle;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.14);
+    font-weight: 900;
+    letter-spacing: 0.5px;
+    user-select: none;
+    transition: filter 120ms ease, transform 120ms ease, background 120ms ease;
+  }
+  table.grid td.dim { filter: brightness(0.7) saturate(0.8); }
+  table.grid td.pop { transform: scale(1.03); }
+
+  .words {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .chip {
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.18);
+    color: #fff;
+    font-weight: bold;
+    font-size: 0.95rem;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+    transition: transform 120ms ease, filter 120ms ease;
+    user-select: none;
+  }
+  .chip:hover { transform: translateY(-1px); filter: brightness(1.08); }
+  .chip small { opacity: 0.85; font-weight: 800; }
+
+  .note {
+    margin-top: 12px;
+    color: rgba(224,224,255,0.9);
+    line-height: 1.6;
+    text-align: left;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; text-align:left;">
+    <div>
+      <h1 style="margin-bottom:6px;">Preview: {{ payload.theme }}</h1>
+      <div class="subtitle" style="margin-bottom:0;">
+        Made by {{ payload.creator_name }} · Grid {{ payload.grid_size }} × {{ payload.grid_size }}
+      </div>
+    </div>
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+      <form method="post" action="{{ url_for('make_word_search') }}" style="display:inline;">
+        <input type="hidden" name="mode" value="edit">
+        <input type="hidden" name="creator_name" value="{{ payload.creator_name }}">
+        <input type="hidden" name="theme" value="{{ payload.theme }}">
+        <input type="hidden" name="grid_size" value="{{ payload.grid_size }}">
+        <textarea name="words" hidden>{{ payload.words | join('\n') }}</textarea>
+        <button type="submit" class="btn btn-ghost">Return to Editor</button>
+      </form>
+
+      <form method="post" action="{{ url_for('save_word_search') }}" style="display:inline;">
+        <textarea name="payload" hidden>{{ payload | tojson }}</textarea>
+        <button type="submit" class="btn btn-primary">Save Puzzle</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>Highlighted words:</strong> all placed words are lightly highlighted. Hover/click a word below to spotlight it.
+  </div>
+
+  <div class="words" id="wordChips">
+    {% for p in payload.placements %}
+      <span class="chip" data-word-index="{{ loop.index0 }}"><small>#{{ loop.index }}</small> {{ p.word }}</span>
+    {% endfor %}
+  </div>
+
+  <div class="grid-wrap">
+    <table class="grid" aria-label="Word search preview grid">
+      <tbody>
+        {% for row in payload.grid %}
+        {% set r = loop.index0 %}
+        <tr>
+          {% for ch in row %}
+          <td data-r="{{ r }}" data-c="{{ loop.index0 }}">{{ ch }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  const payload = {{ payload | tojson }};
+
+  const palette = [
+    {bg: 'rgba(199,125,255,0.22)', glow: 'rgba(199,125,255,0.25)'},
+    {bg: 'rgba(0,255,255,0.18)',   glow: 'rgba(0,255,255,0.22)'},
+    {bg: 'rgba(6,255,165,0.18)',   glow: 'rgba(6,255,165,0.22)'},
+    {bg: 'rgba(255,0,255,0.16)',   glow: 'rgba(255,0,255,0.20)'},
+    {bg: 'rgba(0,180,255,0.16)',   glow: 'rgba(0,180,255,0.20)'},
+    {bg: 'rgba(255,215,0,0.14)',   glow: 'rgba(255,215,0,0.18)'}
+  ];
+
+  const cellEls = new Map();
+  document.querySelectorAll('table.grid td').forEach(td => {
+    cellEls.set(`${td.dataset.r},${td.dataset.c}`, td);
+  });
+
+  // Build coordinate -> wordIndices map
+  const cellToWords = new Map();
+  payload.placements.forEach((pl, idx) => {
+    (pl.cells || []).forEach(([r, c]) => {
+      const key = `${r},${c}`;
+      const arr = cellToWords.get(key) || [];
+      arr.push(idx);
+      cellToWords.set(key, arr);
+    });
+  });
+
+  // Paint all highlights (striped gradient if overlaps)
+  for (const [key, indices] of cellToWords.entries()) {
+    const td = cellEls.get(key);
+    if (!td) continue;
+
+    const colors = indices.slice(0, 3).map(i => palette[i % palette.length].bg);
+    if (colors.length === 1) {
+      td.style.background = colors[0];
+      td.style.boxShadow = `0 0 14px ${palette[indices[0] % palette.length].glow}`;
+    } else {
+      const stops = colors.map((c, i) => {
+        const a = Math.round((i / colors.length) * 100);
+        const b = Math.round(((i + 1) / colors.length) * 100);
+        return `${c} ${a}%, ${c} ${b}%`;
+      }).join(', ');
+      td.style.background = `linear-gradient(135deg, ${stops})`;
+      td.style.boxShadow = `0 0 14px rgba(255,255,255,0.12)`;
+    }
+  }
+
+  function spotlightWord(wordIndex) {
+    // Dim everything first
+    document.querySelectorAll('table.grid td').forEach(td => td.classList.add('dim'));
+    // Then brighten relevant cells
+    const pl = payload.placements[wordIndex];
+    if (!pl) return;
+    (pl.cells || []).forEach(([r, c]) => {
+      const td = cellEls.get(`${r},${c}`);
+      if (!td) return;
+      td.classList.remove('dim');
+      td.classList.add('pop');
+      setTimeout(() => td.classList.remove('pop'), 140);
+    });
+  }
+
+  function clearSpotlight() {
+    document.querySelectorAll('table.grid td').forEach(td => td.classList.remove('dim'));
+  }
+
+  // Hover spotlight
+  document.querySelectorAll('#wordChips .chip').forEach(chip => {
+    const idx = Number(chip.dataset.wordIndex);
+    chip.addEventListener('mouseenter', () => spotlightWord(idx));
+    chip.addEventListener('mouseleave', () => clearSpotlight());
+    chip.addEventListener('click', () => spotlightWord(idx));
+  });
+</script>
+{% endblock %}
+
