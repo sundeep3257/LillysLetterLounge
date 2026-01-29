@@ -20,6 +20,10 @@
     border-collapse: separate;
     border-spacing: 6px;
     margin: 8px auto 0;
+    /* Mobile: allow drag-to-select without the browser treating it as scroll/zoom */
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
   }
   table.grid td {
     width: 34px;
@@ -31,9 +35,9 @@
     border: 1px solid rgba(255,255,255,0.14);
     font-weight: 900;
     letter-spacing: 0.5px;
-    user-select: none;
     cursor: pointer;
     transition: transform 120ms ease, filter 120ms ease, background 120ms ease;
+    -webkit-tap-highlight-color: transparent;
   }
   table.grid td.sel {
     background: rgba(0,255,255,0.22);
@@ -147,12 +151,14 @@
   ];
 
   const toast = document.getElementById('toast');
+  const gridEl = document.querySelector('table.grid');
   const cells = Array.from(document.querySelectorAll('td.cell'));
   const cellMap = new Map(cells.map(td => [`${td.dataset.r},${td.dataset.c}`, td]));
 
   let dragging = false;
   let start = null;
   let current = null;
+  let activePointerId = null;
 
   function showToast(kind, msg) {
     toast.className = 'toast ' + kind;
@@ -230,25 +236,17 @@
     return {r: Number(td.dataset.r), c: Number(td.dataset.c)};
   }
 
-  cells.forEach(td => {
-    td.addEventListener('mousedown', (e) => {
-      dragging = true;
-      start = tdToCoord(td);
-      current = start;
-      paintSelection(start, current);
-      e.preventDefault();
-    });
+  function findCellFromPoint(clientX, clientY) {
+    const el = document.elementFromPoint(clientX, clientY);
+    if (!el) return null;
+    const td = el.closest && el.closest('td.cell');
+    return td || null;
+  }
 
-    td.addEventListener('mouseenter', () => {
-      if (!dragging || !start) return;
-      current = tdToCoord(td);
-      paintSelection(start, current);
-    });
-  });
-
-  window.addEventListener('mouseup', async () => {
+  async function finishDrag() {
     if (!dragging || !start || !current) return;
     dragging = false;
+    activePointerId = null;
 
     const a = start, b = current;
     start = null; current = null;
@@ -270,7 +268,55 @@
     } else {
       showToast('ok', `${word} was already found.`);
     }
-  });
+  }
+
+  // Use Pointer Events so drag-to-select works on both desktop (mouse) and mobile (touch).
+  // Important: `touch-action: none` on the grid ensures the browser doesn't treat the gesture as scrolling.
+  if (gridEl) {
+    gridEl.addEventListener('pointerdown', (e) => {
+      const td = e.target && e.target.closest && e.target.closest('td.cell');
+      if (!td) return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+
+      dragging = true;
+      activePointerId = e.pointerId;
+      start = tdToCoord(td);
+      current = start;
+      paintSelection(start, current);
+
+      try { gridEl.setPointerCapture(e.pointerId); } catch (_) {}
+      e.preventDefault();
+    });
+
+    gridEl.addEventListener('pointermove', (e) => {
+      if (!dragging || !start) return;
+      if (activePointerId !== null && e.pointerId !== activePointerId) return;
+
+      const td = findCellFromPoint(e.clientX, e.clientY);
+      if (!td) return;
+
+      const coord = tdToCoord(td);
+      if (current && coord.r === current.r && coord.c === current.c) return;
+
+      current = coord;
+      paintSelection(start, current);
+      e.preventDefault();
+    });
+
+    gridEl.addEventListener('pointerup', async (e) => {
+      if (activePointerId !== null && e.pointerId !== activePointerId) return;
+      await finishDrag();
+      e.preventDefault();
+    });
+
+    gridEl.addEventListener('pointercancel', () => {
+      dragging = false;
+      activePointerId = null;
+      start = null;
+      current = null;
+      clearSelection();
+    });
+  }
 </script>
 {% endblock %}
 
